@@ -39,13 +39,13 @@ func parseSession(val string) (Booking, error) {
 	}, nil
 }
 
-func (s *RedisStore) Book(b Booking) error {
-	_, err := s.hold(b)
+func (s *RedisStore) Book(b Booking) (Booking, error) {
+	session, err := s.hold(b)
 	if err != nil {
-		return err
+		return Booking{}, err
 	}
 
-	return nil
+	return session, nil
 }
 
 func (s *RedisStore) ListBookings(movieID string) []Booking {

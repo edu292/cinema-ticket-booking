@@ -1,7 +1,9 @@
 package booking
 
 import (
+	"encoding/json"
 	"net/http"
+	"time"
 
 	"cinema-ticket-booking/internal/utils"
 )
@@ -34,4 +36,43 @@ func (h *handler) ListSeats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	utils.WriteJSON(w, http.StatusOK, seats)
+}
+
+func (h *handler) HoldSeat(w http.ResponseWriter, r *http.Request) {
+	movieID := r.PathValue("movieID")
+	seatID := r.PathValue("seatID")
+
+	type holdRequest struct {
+		UserID string `json:"user_id"`
+	}
+
+	var req holdRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		return
+	}
+
+	data := Booking{
+		UserID:  req.UserID,
+		MovieID: movieID,
+		SeatID:  seatID,
+	}
+
+	session, err := h.svc.Book(data)
+	if err != nil {
+		return
+	}
+
+	type holdResponse struct {
+		SessionID string `json:"session_id"`
+		MovieID   string `json:"movieID"`
+		SeatID    string `json:"seat_id"`
+		ExpiresAt string `json:"expires_at"`
+	}
+
+	utils.WriteJSON(w, http.StatusOK, holdResponse{
+		SeatID:    seatID,
+		MovieID:   session.MovieID,
+		SessionID: session.ID,
+		ExpiresAt: session.ExpiresAt.Format(time.RFC3339),
+	})
 }
