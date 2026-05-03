@@ -24,12 +24,17 @@ func main() {
 	svc := booking.NewService(store)
 	bookingHandler := booking.NewHandler(svc)
 
-	mux.Handle("GET /", http.FileServer(http.Dir("static")))
+	mux.Handle("/", http.FileServer(http.Dir("static")))
 
 	mux.HandleFunc("GET /movies", listMovies)
 
 	mux.HandleFunc("GET /movies/{movieID}/seats", bookingHandler.ListSeats)
 	mux.HandleFunc("POST /movies/{movieID}/seats/{seatID}/hold", bookingHandler.HoldSeat)
+
+	sessionsMux := http.NewServeMux()
+	mux.Handle("/sessions/", http.StripPrefix("/sessions", utils.AuthMW(sessionsMux)))
+	sessionsMux.HandleFunc("PUT /{sessionID}/confirm", bookingHandler.ConfirmSession)
+	sessionsMux.HandleFunc("DELETE /{sessionID}", bookingHandler.ReleaseSession)
 
 	if err := http.ListenAndServe(":8080", mux); err != nil {
 		log.Fatal(err)

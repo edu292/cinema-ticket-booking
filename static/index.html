@@ -467,6 +467,7 @@
 
               var info = statusMap[seatID];
               if (info) {
+                btn.disabled = true;
                 if (info.confirmed) {
                   btn.classList.add("seat--confirmed");
                 } else if (info.booked && info.user_id === userID) {

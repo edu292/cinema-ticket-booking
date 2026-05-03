@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/google/uuid"
@@ -72,21 +73,24 @@ func (s *RedisStore) ListBookings(movieID string) []Booking {
 	return sessions
 }
 
+func seatKey(b Booking) string {
+	return fmt.Sprintf("seat:%s:%s", b.MovieID, b.SeatID)
+}
+
 func (s *RedisStore) hold(b Booking) (Booking, error) {
 	id := uuid.New().String()
 	now := time.Now()
 	ctx := context.Background()
-	key := fmt.Sprintf("seat:%s:%s", b.MovieID, b.SeatID)
+	key := seatKey(b)
 
 	b.ID = id
 	val, _ := json.Marshal(b)
 
-	res := s.rdb.SetArgs(ctx, key, val, redis.SetArgs{
+	err := s.rdb.SetArgs(ctx, key, val, redis.SetArgs{
 		Mode: "NX",
 		TTL:  defaultHoldTTL,
-	})
-
-	if res.Val() != "OK" {
+	}).Err()
+	if err != nil {
 		return Booking{}, ErrSeatAlreadyTaken
 	}
 
@@ -97,7 +101,69 @@ func (s *RedisStore) hold(b Booking) (Booking, error) {
 		MovieID:   b.MovieID,
 		SeatID:    b.SeatID,
 		UserID:    b.UserID,
-		Status:    "held",
+		Status:    StatusHeld,
 		ExpiresAt: now.Add(defaultHoldTTL),
 	}, nil
+}
+
+func (s *RedisStore) getBookingFromSession(ctx context.Context, sessionID, userID string) (Booking, error) {
+	key, err := s.rdb.Get(ctx, sessionKey(sessionID)).Result()
+	if err != nil {
+		return Booking{}, err
+	}
+
+	val, err := s.rdb.Get(ctx, key).Result()
+	if err != nil {
+		return Booking{}, err
+	}
+
+	booking, err := parseSession(val)
+	if err != nil {
+		return Booking{}, err
+	}
+
+	if booking.UserID != userID {
+		log.Fatalf("sessioUser: %s, userID: %s", booking.UserID, userID)
+		return Booking{}, ErrForbidden
+	}
+
+	return booking, nil
+}
+
+func (s *RedisStore) ConfirmSession(sessionID, userID string) error {
+	ctx := context.Background()
+	booking, err := s.getBookingFromSession(ctx, sessionID, userID)
+	if err != nil {
+		return err
+	}
+
+	booking.Status = StatusConfimed
+
+	data, err := json.Marshal(booking)
+	if err != nil {
+		return err
+	}
+
+	key := seatKey(booking)
+	err = s.rdb.Set(ctx, key, data, 0).Err()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *RedisStore) ReleaseSession(sessionID, userID string) error {
+	ctx := context.Background()
+	booking, err := s.getBookingFromSession(ctx, sessionID, userID)
+	if err != nil {
+		return err
+	}
+
+	err = s.rdb.Del(ctx, seatKey(booking)).Err()
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

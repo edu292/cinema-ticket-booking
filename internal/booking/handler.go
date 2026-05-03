@@ -2,6 +2,7 @@ package booking
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"time"
 
@@ -13,9 +14,10 @@ type handler struct {
 }
 
 type seatInfo struct {
-	SeatID string `json:"seat_id"`
-	UserID string `json:"user_id"`
-	Booked bool   `json:"booked"`
+	SeatID    string `json:"seat_id"`
+	UserID    string `json:"user_id"`
+	Booked    bool   `json:"booked"`
+	Confirmed bool   `json:"confirmed"`
 }
 
 func NewHandler(svc *Service) *handler {
@@ -28,11 +30,18 @@ func (h *handler) ListSeats(w http.ResponseWriter, r *http.Request) {
 
 	seats := make([]seatInfo, 0, len(bookings))
 	for _, b := range bookings {
-		seats = append(seats, seatInfo{
+		seat := seatInfo{
 			SeatID: b.SeatID,
 			UserID: b.UserID,
-			Booked: true,
-		})
+		}
+		switch b.Status {
+		case StatusHeld:
+			seat.Booked = true
+		case StatusConfimed:
+			seat.Confirmed = true
+		}
+
+		seats = append(seats, seat)
 	}
 
 	utils.WriteJSON(w, http.StatusOK, seats)
@@ -75,4 +84,29 @@ func (h *handler) HoldSeat(w http.ResponseWriter, r *http.Request) {
 		SessionID: session.ID,
 		ExpiresAt: session.ExpiresAt.Format(time.RFC3339),
 	})
+}
+
+func (h *handler) ReleaseSession(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.PathValue("sessionID")
+	userID, _ := r.Context().Value(utils.ContextUserID).(string)
+
+	err := h.svc.ReleaseSession(sessionID, userID)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	utils.WriteJSON(w, http.StatusOK, nil)
+}
+
+func (h *handler) ConfirmSession(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.PathValue("sessionID")
+	userID, _ := r.Context().Value(utils.ContextUserID).(string)
+
+	err := h.svc.ConfirmSession(sessionID, userID)
+	if err != nil {
+		log.Fatal(err)
+		return
+	}
+
+	utils.WriteJSON(w, http.StatusOK, nil)
 }
